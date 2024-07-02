@@ -98,11 +98,10 @@ func mustSetupCluster(tCtx ktesting.TContext, config *config.KubeSchedulerConfig
 	if err != nil {
 		tCtx.Fatalf("start apiserver: %v", err)
 	}
+	// Cleanup will be in reverse order: first the clients by canceling the
+	// child context (happens automatically), then the server.
 	tCtx.Cleanup(server.TearDownFn)
-
-	// Cleanup will be in reverse order: first the clients get cancelled,
-	// then the apiserver is torn down via the automatic cancelation of
-	// tCtx.
+	tCtx = ktesting.WithCancel(tCtx)
 
 	// TODO: client connection configuration, such as QPS or Burst is configurable in theory, this could be derived from the `config`, need to
 	// support this when there is any testcase that depends on such configuration.
@@ -328,7 +327,6 @@ func collectHistogramVec(metric string, labels map[string]string, lvMap map[stri
 	}
 
 	if vec.GetAggregatedSampleCount() == 0 {
-		klog.InfoS("It is expected that this metric wasn't recorded. The data for this metric won't be stored in a benchmark result file", "metric", metric, "labels", labels)
 		return nil
 	}
 
@@ -431,22 +429,21 @@ func (tc *throughputCollector) run(tCtx ktesting.TContext) {
 			// be scheduled immediately when the timer
 			// triggers. Instead we track the actual time stamps.
 			duration := now.Sub(lastSampleTime)
-			durationInSeconds := duration.Seconds()
-			throughput := float64(newScheduled) / durationInSeconds
 			expectedDuration := throughputSampleInterval * time.Duration(skipped+1)
 			errorMargin := (duration - expectedDuration).Seconds() / expectedDuration.Seconds() * 100
 			if tc.errorMargin > 0 && math.Abs(errorMargin) > tc.errorMargin {
 				// This might affect the result, report it.
-				tCtx.Errorf("ERROR: Expected throuput collector to sample at regular time intervals. The %d most recent intervals took %s instead of %s, a difference of %0.1f%%.", skipped+1, duration, expectedDuration, errorMargin)
+				klog.Infof("WARNING: Expected throughput collector to sample at regular time intervals. The %d most recent intervals took %s instead of %s, a difference of %0.1f%%.", skipped+1, duration, expectedDuration, errorMargin)
 			}
 
 			// To keep percentiles accurate, we have to record multiple samples with the same
 			// throughput value if we skipped some intervals.
+			throughput := float64(newScheduled) / duration.Seconds()
 			for i := 0; i <= skipped; i++ {
 				tc.schedulingThroughputs = append(tc.schedulingThroughputs, throughput)
 			}
 			lastScheduledCount = scheduled
-			klog.Infof("%d pods scheduled", lastScheduledCount)
+			klog.Infof("%d pods have been scheduled successfully", lastScheduledCount)
 			skipped = 0
 			lastSampleTime = now
 		}

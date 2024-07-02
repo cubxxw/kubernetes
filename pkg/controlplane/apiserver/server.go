@@ -93,13 +93,11 @@ func (c completedConfig) New(name string, delegationTarget genericapiserver.Dele
 		routes.Logs{}.Install(generic.Handler.GoRestfulContainer)
 	}
 
-	// Metadata and keys are expected to only change across restarts at present,
-	// so we just marshal immediately and serve the cached JSON bytes.
-	md, err := serviceaccount.NewOpenIDMetadata(
+	md, err := serviceaccount.NewOpenIDMetadataProvider(
 		c.ServiceAccountIssuerURL,
 		c.ServiceAccountJWKSURI,
 		c.Generic.ExternalAddress,
-		c.ServiceAccountPublicKeys,
+		c.ServiceAccountPublicKeysGetter,
 	)
 	if err != nil {
 		// If there was an error, skip installing the endpoints and log the
@@ -120,8 +118,7 @@ func (c completedConfig) New(name string, delegationTarget genericapiserver.Dele
 			klog.Info(msg)
 		}
 	} else {
-		routes.NewOpenIDMetadataServer(md.ConfigJSON, md.PublicKeysetJSON).
-			Install(generic.Handler.GoRestfulContainer)
+		routes.NewOpenIDMetadataServer(md).Install(generic.Handler.GoRestfulContainer)
 	}
 
 	s := &Server{
@@ -246,6 +243,10 @@ func (c completedConfig) New(name string, delegationTarget genericapiserver.Dele
 			).Run(hookContext.StopCh)
 			return nil
 		})
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(apiserverfeatures.WatchCacheInitializationPostStartHook) {
+		s.GenericAPIServer.AddPostStartHookOrDie("storage-readiness", s.GenericAPIServer.StorageReadinessHook.Hook)
 	}
 
 	s.GenericAPIServer.AddPostStartHookOrDie("start-legacy-token-tracking-controller", func(hookContext genericapiserver.PostStartHookContext) error {

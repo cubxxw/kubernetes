@@ -4840,7 +4840,7 @@
           "type": "string"
         },
         "ready": {
-          "description": "The number of pods which have a Ready condition.",
+          "description": "The number of active pods which have a Ready condition and are not terminating (without a deletionTimestamp).",
           "format": "int32",
           "type": "integer"
         },
@@ -5813,20 +5813,6 @@
       ],
       "type": "object"
     },
-    "io.k8s.api.core.v1.ClaimSource": {
-      "description": "ClaimSource describes a reference to a ResourceClaim.\n\nExactly one of these fields should be set.  Consumers of this type must treat an empty object as if it has an unknown value.",
-      "properties": {
-        "resourceClaimName": {
-          "description": "ResourceClaimName is the name of a ResourceClaim object in the same namespace as this pod.",
-          "type": "string"
-        },
-        "resourceClaimTemplateName": {
-          "description": "ResourceClaimTemplateName is the name of a ResourceClaimTemplate object in the same namespace as this pod.\n\nThe template will be used to create a new ResourceClaim, which will be bound to this pod. When this pod is deleted, the ResourceClaim will also be deleted. The pod name and resource name, along with a generated component, will be used to form a unique name for the ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.\n\nThis field is immutable and no changes will be made to the corresponding ResourceClaim by the control plane after creating the ResourceClaim.",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "io.k8s.api.core.v1.ClientIPConfig": {
       "description": "ClientIPConfig represents the configurations of Client IP based session affinity.",
       "properties": {
@@ -6519,6 +6505,10 @@
           "$ref": "#/definitions/io.k8s.api.core.v1.ContainerState",
           "description": "State holds details about the container's current condition."
         },
+        "user": {
+          "$ref": "#/definitions/io.k8s.api.core.v1.ContainerUser",
+          "description": "User represents user identity information initially attached to the first process of the container"
+        },
         "volumeMounts": {
           "description": "Status of volume mounts.",
           "items": {
@@ -6540,6 +6530,16 @@
         "image",
         "imageID"
       ],
+      "type": "object"
+    },
+    "io.k8s.api.core.v1.ContainerUser": {
+      "description": "ContainerUser represents user identity information",
+      "properties": {
+        "linux": {
+          "$ref": "#/definitions/io.k8s.api.core.v1.LinuxContainerUser",
+          "description": "Linux holds user identity information initially attached to the first process of the containers in Linux. Note that the actual running identity can be changed if the process has enough privilege to do so."
+        }
+      },
       "type": "object"
     },
     "io.k8s.api.core.v1.DaemonEndpoint": {
@@ -7809,6 +7809,35 @@
       ],
       "type": "object"
     },
+    "io.k8s.api.core.v1.LinuxContainerUser": {
+      "description": "LinuxContainerUser represents user identity information in Linux containers",
+      "properties": {
+        "gid": {
+          "description": "GID is the primary gid initially attached to the first process in the container",
+          "format": "int64",
+          "type": "integer"
+        },
+        "supplementalGroups": {
+          "description": "SupplementalGroups are the supplemental groups initially attached to the first process in the container",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": "array",
+          "x-kubernetes-list-type": "atomic"
+        },
+        "uid": {
+          "description": "UID is the primary uid initially attached to the first process in the container",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uid",
+        "gid"
+      ],
+      "type": "object"
+    },
     "io.k8s.api.core.v1.LoadBalancerIngress": {
       "description": "LoadBalancerIngress represents the status of a load-balancer ingress point: traffic intended for the service should be sent to an ingress point.",
       "properties": {
@@ -8389,7 +8418,7 @@
           "additionalProperties": {
             "$ref": "#/definitions/io.k8s.apimachinery.pkg.api.resource.Quantity"
           },
-          "description": "Capacity represents the total resources of a node. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity",
+          "description": "Capacity represents the total resources of a node. More info: https://kubernetes.io/docs/reference/node/node-status/#capacity",
           "type": "object"
         },
         "conditions": {
@@ -9328,15 +9357,19 @@
       "type": "object"
     },
     "io.k8s.api.core.v1.PodResourceClaim": {
-      "description": "PodResourceClaim references exactly one ResourceClaim through a ClaimSource. It adds a name to it that uniquely identifies the ResourceClaim inside the Pod. Containers that need access to the ResourceClaim reference it with this name.",
+      "description": "PodResourceClaim references exactly one ResourceClaim, either directly or by naming a ResourceClaimTemplate which is then turned into a ResourceClaim for the pod.\n\nIt adds a name to it that uniquely identifies the ResourceClaim inside the Pod. Containers that need access to the ResourceClaim reference it with this name.",
       "properties": {
         "name": {
           "description": "Name uniquely identifies this resource claim inside the pod. This must be a DNS_LABEL.",
           "type": "string"
         },
-        "source": {
-          "$ref": "#/definitions/io.k8s.api.core.v1.ClaimSource",
-          "description": "Source describes where to find the ResourceClaim."
+        "resourceClaimName": {
+          "description": "ResourceClaimName is the name of a ResourceClaim object in the same namespace as this pod.\n\nExactly one of ResourceClaimName and ResourceClaimTemplateName must be set.",
+          "type": "string"
+        },
+        "resourceClaimTemplateName": {
+          "description": "ResourceClaimTemplateName is the name of a ResourceClaimTemplate object in the same namespace as this pod.\n\nThe template will be used to create a new ResourceClaim, which will be bound to this pod. When this pod is deleted, the ResourceClaim will also be deleted. The pod name and resource name, along with a generated component, will be used to form a unique name for the ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.\n\nThis field is immutable and no changes will be made to the corresponding ResourceClaim by the control plane after creating the ResourceClaim.\n\nExactly one of ResourceClaimName and ResourceClaimTemplateName must be set.",
+          "type": "string"
         }
       },
       "required": [
@@ -9413,13 +9446,17 @@
           "description": "The seccomp options to use by the containers in this pod. Note that this field cannot be set when spec.os.name is windows."
         },
         "supplementalGroups": {
-          "description": "A list of groups applied to the first process run in each container, in addition to the container's primary GID, the fsGroup (if specified), and group memberships defined in the container image for the uid of the container process. If unspecified, no additional groups are added to any container. Note that group memberships defined in the container image for the uid of the container process are still effective, even if they are not included in this list. Note that this field cannot be set when spec.os.name is windows.",
+          "description": "A list of groups applied to the first process run in each container, in addition to the container's primary GID and fsGroup (if specified).  If the SupplementalGroupsPolicy feature is enabled, the supplementalGroupsPolicy field determines whether these are in addition to or instead of any group memberships defined in the container image. If unspecified, no additional groups are added, though group memberships defined in the container image may still be used, depending on the supplementalGroupsPolicy field. Note that this field cannot be set when spec.os.name is windows.",
           "items": {
             "format": "int64",
             "type": "integer"
           },
           "type": "array",
           "x-kubernetes-list-type": "atomic"
+        },
+        "supplementalGroupsPolicy": {
+          "description": "Defines how supplemental groups of the first container processes are calculated. Valid values are \"Merge\" and \"Strict\". If not specified, \"Merge\" is used. (Alpha) Using the field requires the SupplementalGroupsPolicy feature gate to be enabled and the container runtime must implement support for this feature. Note that this field cannot be set when spec.os.name is windows.",
+          "type": "string"
         },
         "sysctls": {
           "description": "Sysctls hold a list of namespaced sysctls used for the pod. Pods with unsupported sysctls (by the container runtime) might fail to launch. Note that this field cannot be set when spec.os.name is windows.",
@@ -9563,7 +9600,7 @@
         },
         "os": {
           "$ref": "#/definitions/io.k8s.api.core.v1.PodOS",
-          "description": "Specifies the OS of the containers in the pod. Some pod and container fields are restricted if this is set.\n\nIf the OS field is set to linux, the following fields must be unset: -securityContext.windowsOptions\n\nIf the OS field is set to windows, following fields must be unset: - spec.hostPID - spec.hostIPC - spec.hostUsers - spec.securityContext.appArmorProfile - spec.securityContext.seLinuxOptions - spec.securityContext.seccompProfile - spec.securityContext.fsGroup - spec.securityContext.fsGroupChangePolicy - spec.securityContext.sysctls - spec.shareProcessNamespace - spec.securityContext.runAsUser - spec.securityContext.runAsGroup - spec.securityContext.supplementalGroups - spec.containers[*].securityContext.appArmorProfile - spec.containers[*].securityContext.seLinuxOptions - spec.containers[*].securityContext.seccompProfile - spec.containers[*].securityContext.capabilities - spec.containers[*].securityContext.readOnlyRootFilesystem - spec.containers[*].securityContext.privileged - spec.containers[*].securityContext.allowPrivilegeEscalation - spec.containers[*].securityContext.procMount - spec.containers[*].securityContext.runAsUser - spec.containers[*].securityContext.runAsGroup"
+          "description": "Specifies the OS of the containers in the pod. Some pod and container fields are restricted if this is set.\n\nIf the OS field is set to linux, the following fields must be unset: -securityContext.windowsOptions\n\nIf the OS field is set to windows, following fields must be unset: - spec.hostPID - spec.hostIPC - spec.hostUsers - spec.securityContext.appArmorProfile - spec.securityContext.seLinuxOptions - spec.securityContext.seccompProfile - spec.securityContext.fsGroup - spec.securityContext.fsGroupChangePolicy - spec.securityContext.sysctls - spec.shareProcessNamespace - spec.securityContext.runAsUser - spec.securityContext.runAsGroup - spec.securityContext.supplementalGroups - spec.securityContext.supplementalGroupsPolicy - spec.containers[*].securityContext.appArmorProfile - spec.containers[*].securityContext.seLinuxOptions - spec.containers[*].securityContext.seccompProfile - spec.containers[*].securityContext.capabilities - spec.containers[*].securityContext.readOnlyRootFilesystem - spec.containers[*].securityContext.privileged - spec.containers[*].securityContext.allowPrivilegeEscalation - spec.containers[*].securityContext.procMount - spec.containers[*].securityContext.runAsUser - spec.containers[*].securityContext.runAsGroup"
         },
         "overhead": {
           "additionalProperties": {
@@ -14017,7 +14054,7 @@
       },
       "type": "object"
     },
-    "io.k8s.api.networking.v1alpha1.IPAddress": {
+    "io.k8s.api.networking.v1beta1.IPAddress": {
       "description": "IPAddress represents a single IP of a single IP Family. The object is designed to be used by APIs that operate on IP addresses. The object is used by the Service core API for allocation of IP addresses. An IP address can be represented in different formats, to guarantee the uniqueness of the IP, the name of the object is the IP address in canonical format, four decimal digits separated by dots suppressing leading zeros for IPv4 and the representation defined by RFC 5952 for IPv6. Valid: 192.168.1.5 or 2001:db8::1 or 2001:db8:aaaa:bbbb:cccc:dddd:eeee:1 Invalid: 10.01.2.3 or 2001:db8:0:0:0::1",
       "properties": {
         "apiVersion": {
@@ -14033,7 +14070,7 @@
           "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata"
         },
         "spec": {
-          "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddressSpec",
+          "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddressSpec",
           "description": "spec is the desired state of the IPAddress. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"
         }
       },
@@ -14042,11 +14079,11 @@
         {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       ]
     },
-    "io.k8s.api.networking.v1alpha1.IPAddressList": {
+    "io.k8s.api.networking.v1beta1.IPAddressList": {
       "description": "IPAddressList contains a list of IPAddress.",
       "properties": {
         "apiVersion": {
@@ -14056,7 +14093,7 @@
         "items": {
           "description": "items is the list of IPAddresses.",
           "items": {
-            "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+            "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
           },
           "type": "array"
         },
@@ -14077,15 +14114,15 @@
         {
           "group": "networking.k8s.io",
           "kind": "IPAddressList",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       ]
     },
-    "io.k8s.api.networking.v1alpha1.IPAddressSpec": {
+    "io.k8s.api.networking.v1beta1.IPAddressSpec": {
       "description": "IPAddressSpec describe the attributes in an IP Address.",
       "properties": {
         "parentRef": {
-          "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ParentReference",
+          "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ParentReference",
           "description": "ParentRef references the resource that an IPAddress is attached to. An IPAddress must reference a parent object."
         }
       },
@@ -14094,7 +14131,7 @@
       ],
       "type": "object"
     },
-    "io.k8s.api.networking.v1alpha1.ParentReference": {
+    "io.k8s.api.networking.v1beta1.ParentReference": {
       "description": "ParentReference describes a reference to a parent object.",
       "properties": {
         "group": {
@@ -14120,7 +14157,7 @@
       ],
       "type": "object"
     },
-    "io.k8s.api.networking.v1alpha1.ServiceCIDR": {
+    "io.k8s.api.networking.v1beta1.ServiceCIDR": {
       "description": "ServiceCIDR defines a range of IP addresses using CIDR format (e.g. 192.168.0.0/24 or 2001:db2::/64). This range is used to allocate ClusterIPs to Service objects.",
       "properties": {
         "apiVersion": {
@@ -14136,11 +14173,11 @@
           "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata"
         },
         "spec": {
-          "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDRSpec",
+          "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDRSpec",
           "description": "spec is the desired state of the ServiceCIDR. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"
         },
         "status": {
-          "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDRStatus",
+          "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDRStatus",
           "description": "status represents the current state of the ServiceCIDR. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"
         }
       },
@@ -14149,11 +14186,11 @@
         {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       ]
     },
-    "io.k8s.api.networking.v1alpha1.ServiceCIDRList": {
+    "io.k8s.api.networking.v1beta1.ServiceCIDRList": {
       "description": "ServiceCIDRList contains a list of ServiceCIDR objects.",
       "properties": {
         "apiVersion": {
@@ -14163,7 +14200,7 @@
         "items": {
           "description": "items is the list of ServiceCIDRs.",
           "items": {
-            "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+            "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
           },
           "type": "array"
         },
@@ -14184,11 +14221,11 @@
         {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDRList",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       ]
     },
-    "io.k8s.api.networking.v1alpha1.ServiceCIDRSpec": {
+    "io.k8s.api.networking.v1beta1.ServiceCIDRSpec": {
       "description": "ServiceCIDRSpec define the CIDRs the user wants to use for allocating ClusterIPs for Services.",
       "properties": {
         "cidrs": {
@@ -14202,7 +14239,7 @@
       },
       "type": "object"
     },
-    "io.k8s.api.networking.v1alpha1.ServiceCIDRStatus": {
+    "io.k8s.api.networking.v1beta1.ServiceCIDRStatus": {
       "description": "ServiceCIDRStatus describes the current state of the ServiceCIDR.",
       "properties": {
         "conditions": {
@@ -64186,7 +64223,7 @@
         }
       ]
     },
-    "/apis/networking.k8s.io/v1alpha1/": {
+    "/apis/networking.k8s.io/v1beta1/": {
       "get": {
         "consumes": [
           "application/json",
@@ -64194,7 +64231,7 @@
           "application/vnd.kubernetes.protobuf"
         ],
         "description": "get available resources",
-        "operationId": "getNetworkingV1alpha1APIResources",
+        "operationId": "getNetworkingV1beta1APIResources",
         "produces": [
           "application/json",
           "application/yaml",
@@ -64215,17 +64252,17 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ]
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/ipaddresses": {
+    "/apis/networking.k8s.io/v1beta1/ipaddresses": {
       "delete": {
         "consumes": [
           "*/*"
         ],
         "description": "delete collection of IPAddress",
-        "operationId": "deleteNetworkingV1alpha1CollectionIPAddress",
+        "operationId": "deleteNetworkingV1beta1CollectionIPAddress",
         "parameters": [
           {
             "$ref": "#/parameters/body-2Y1dVQaQ"
@@ -64291,13 +64328,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "deletecollection",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "get": {
@@ -64305,7 +64342,7 @@
           "*/*"
         ],
         "description": "list or watch objects of kind IPAddress",
-        "operationId": "listNetworkingV1alpha1IPAddress",
+        "operationId": "listNetworkingV1beta1IPAddress",
         "parameters": [
           {
             "$ref": "#/parameters/allowWatchBookmarks-HC2hJt-J"
@@ -64349,7 +64386,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddressList"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddressList"
             }
           },
           "401": {
@@ -64360,13 +64397,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "list",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -64379,14 +64416,14 @@
           "*/*"
         ],
         "description": "create an IPAddress",
-        "operationId": "createNetworkingV1alpha1IPAddress",
+        "operationId": "createNetworkingV1beta1IPAddress",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           {
@@ -64416,19 +64453,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "202": {
             "description": "Accepted",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "401": {
@@ -64439,23 +64476,23 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "post",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/ipaddresses/{name}": {
+    "/apis/networking.k8s.io/v1beta1/ipaddresses/{name}": {
       "delete": {
         "consumes": [
           "*/*"
         ],
         "description": "delete an IPAddress",
-        "operationId": "deleteNetworkingV1alpha1IPAddress",
+        "operationId": "deleteNetworkingV1beta1IPAddress",
         "parameters": [
           {
             "$ref": "#/parameters/body-2Y1dVQaQ"
@@ -64503,13 +64540,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "delete",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "get": {
@@ -64517,7 +64554,7 @@
           "*/*"
         ],
         "description": "read the specified IPAddress",
-        "operationId": "readNetworkingV1alpha1IPAddress",
+        "operationId": "readNetworkingV1beta1IPAddress",
         "produces": [
           "application/json",
           "application/yaml",
@@ -64527,7 +64564,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "401": {
@@ -64538,13 +64575,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "get",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -64568,7 +64605,7 @@
           "application/apply-patch+yaml"
         ],
         "description": "partially update the specified IPAddress",
-        "operationId": "patchNetworkingV1alpha1IPAddress",
+        "operationId": "patchNetworkingV1beta1IPAddress",
         "parameters": [
           {
             "$ref": "#/parameters/body-78PwaGsr"
@@ -64603,13 +64640,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "401": {
@@ -64620,13 +64657,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "patch",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "put": {
@@ -64634,14 +64671,14 @@
           "*/*"
         ],
         "description": "replace the specified IPAddress",
-        "operationId": "replaceNetworkingV1alpha1IPAddress",
+        "operationId": "replaceNetworkingV1beta1IPAddress",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           {
@@ -64671,13 +64708,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.IPAddress"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.IPAddress"
             }
           },
           "401": {
@@ -64688,23 +64725,23 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "put",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/servicecidrs": {
+    "/apis/networking.k8s.io/v1beta1/servicecidrs": {
       "delete": {
         "consumes": [
           "*/*"
         ],
         "description": "delete collection of ServiceCIDR",
-        "operationId": "deleteNetworkingV1alpha1CollectionServiceCIDR",
+        "operationId": "deleteNetworkingV1beta1CollectionServiceCIDR",
         "parameters": [
           {
             "$ref": "#/parameters/body-2Y1dVQaQ"
@@ -64770,13 +64807,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "deletecollection",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "get": {
@@ -64784,7 +64821,7 @@
           "*/*"
         ],
         "description": "list or watch objects of kind ServiceCIDR",
-        "operationId": "listNetworkingV1alpha1ServiceCIDR",
+        "operationId": "listNetworkingV1beta1ServiceCIDR",
         "parameters": [
           {
             "$ref": "#/parameters/allowWatchBookmarks-HC2hJt-J"
@@ -64828,7 +64865,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDRList"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDRList"
             }
           },
           "401": {
@@ -64839,13 +64876,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "list",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -64858,14 +64895,14 @@
           "*/*"
         ],
         "description": "create a ServiceCIDR",
-        "operationId": "createNetworkingV1alpha1ServiceCIDR",
+        "operationId": "createNetworkingV1beta1ServiceCIDR",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           {
@@ -64895,19 +64932,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "202": {
             "description": "Accepted",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -64918,23 +64955,23 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "post",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/servicecidrs/{name}": {
+    "/apis/networking.k8s.io/v1beta1/servicecidrs/{name}": {
       "delete": {
         "consumes": [
           "*/*"
         ],
         "description": "delete a ServiceCIDR",
-        "operationId": "deleteNetworkingV1alpha1ServiceCIDR",
+        "operationId": "deleteNetworkingV1beta1ServiceCIDR",
         "parameters": [
           {
             "$ref": "#/parameters/body-2Y1dVQaQ"
@@ -64982,13 +65019,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "delete",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "get": {
@@ -64996,7 +65033,7 @@
           "*/*"
         ],
         "description": "read the specified ServiceCIDR",
-        "operationId": "readNetworkingV1alpha1ServiceCIDR",
+        "operationId": "readNetworkingV1beta1ServiceCIDR",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65006,7 +65043,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65017,13 +65054,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "get",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -65047,7 +65084,7 @@
           "application/apply-patch+yaml"
         ],
         "description": "partially update the specified ServiceCIDR",
-        "operationId": "patchNetworkingV1alpha1ServiceCIDR",
+        "operationId": "patchNetworkingV1beta1ServiceCIDR",
         "parameters": [
           {
             "$ref": "#/parameters/body-78PwaGsr"
@@ -65082,13 +65119,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65099,13 +65136,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "patch",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "put": {
@@ -65113,14 +65150,14 @@
           "*/*"
         ],
         "description": "replace the specified ServiceCIDR",
-        "operationId": "replaceNetworkingV1alpha1ServiceCIDR",
+        "operationId": "replaceNetworkingV1beta1ServiceCIDR",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           {
@@ -65150,13 +65187,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65167,23 +65204,23 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "put",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/servicecidrs/{name}/status": {
+    "/apis/networking.k8s.io/v1beta1/servicecidrs/{name}/status": {
       "get": {
         "consumes": [
           "*/*"
         ],
         "description": "read status of the specified ServiceCIDR",
-        "operationId": "readNetworkingV1alpha1ServiceCIDRStatus",
+        "operationId": "readNetworkingV1beta1ServiceCIDRStatus",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65193,7 +65230,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65204,13 +65241,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "get",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -65234,7 +65271,7 @@
           "application/apply-patch+yaml"
         ],
         "description": "partially update status of the specified ServiceCIDR",
-        "operationId": "patchNetworkingV1alpha1ServiceCIDRStatus",
+        "operationId": "patchNetworkingV1beta1ServiceCIDRStatus",
         "parameters": [
           {
             "$ref": "#/parameters/body-78PwaGsr"
@@ -65269,13 +65306,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65286,13 +65323,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "patch",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "put": {
@@ -65300,14 +65337,14 @@
           "*/*"
         ],
         "description": "replace status of the specified ServiceCIDR",
-        "operationId": "replaceNetworkingV1alpha1ServiceCIDRStatus",
+        "operationId": "replaceNetworkingV1beta1ServiceCIDRStatus",
         "parameters": [
           {
             "in": "body",
             "name": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           {
@@ -65337,13 +65374,13 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "201": {
             "description": "Created",
             "schema": {
-              "$ref": "#/definitions/io.k8s.api.networking.v1alpha1.ServiceCIDR"
+              "$ref": "#/definitions/io.k8s.api.networking.v1beta1.ServiceCIDR"
             }
           },
           "401": {
@@ -65354,23 +65391,23 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "put",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       }
     },
-    "/apis/networking.k8s.io/v1alpha1/watch/ipaddresses": {
+    "/apis/networking.k8s.io/v1beta1/watch/ipaddresses": {
       "get": {
         "consumes": [
           "*/*"
         ],
         "description": "watch individual changes to a list of IPAddress. deprecated: use the 'watch' parameter with a list operation instead.",
-        "operationId": "watchNetworkingV1alpha1IPAddressList",
+        "operationId": "watchNetworkingV1beta1IPAddressList",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65393,13 +65430,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "watchlist",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -65438,13 +65475,13 @@
         }
       ]
     },
-    "/apis/networking.k8s.io/v1alpha1/watch/ipaddresses/{name}": {
+    "/apis/networking.k8s.io/v1beta1/watch/ipaddresses/{name}": {
       "get": {
         "consumes": [
           "*/*"
         ],
         "description": "watch changes to an object of kind IPAddress. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.",
-        "operationId": "watchNetworkingV1alpha1IPAddress",
+        "operationId": "watchNetworkingV1beta1IPAddress",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65467,13 +65504,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "watch",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "IPAddress",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -65520,13 +65557,13 @@
         }
       ]
     },
-    "/apis/networking.k8s.io/v1alpha1/watch/servicecidrs": {
+    "/apis/networking.k8s.io/v1beta1/watch/servicecidrs": {
       "get": {
         "consumes": [
           "*/*"
         ],
         "description": "watch individual changes to a list of ServiceCIDR. deprecated: use the 'watch' parameter with a list operation instead.",
-        "operationId": "watchNetworkingV1alpha1ServiceCIDRList",
+        "operationId": "watchNetworkingV1beta1ServiceCIDRList",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65549,13 +65586,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "watchlist",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [
@@ -65594,13 +65631,13 @@
         }
       ]
     },
-    "/apis/networking.k8s.io/v1alpha1/watch/servicecidrs/{name}": {
+    "/apis/networking.k8s.io/v1beta1/watch/servicecidrs/{name}": {
       "get": {
         "consumes": [
           "*/*"
         ],
         "description": "watch changes to an object of kind ServiceCIDR. deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter.",
-        "operationId": "watchNetworkingV1alpha1ServiceCIDR",
+        "operationId": "watchNetworkingV1beta1ServiceCIDR",
         "produces": [
           "application/json",
           "application/yaml",
@@ -65623,13 +65660,13 @@
           "https"
         ],
         "tags": [
-          "networking_v1alpha1"
+          "networking_v1beta1"
         ],
         "x-kubernetes-action": "watch",
         "x-kubernetes-group-version-kind": {
           "group": "networking.k8s.io",
           "kind": "ServiceCIDR",
-          "version": "v1alpha1"
+          "version": "v1beta1"
         }
       },
       "parameters": [

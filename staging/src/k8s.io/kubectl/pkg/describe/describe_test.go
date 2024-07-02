@@ -37,7 +37,6 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	discoveryv1beta1 "k8s.io/api/discovery/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
-	networkingv1alpha1 "k8s.io/api/networking/v1alpha1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -67,7 +66,7 @@ func TestDescribePod(t *testing.T) {
 	gracePeriod := int64(1234)
 	condition1 := corev1.PodConditionType("condition1")
 	condition2 := corev1.PodConditionType("condition2")
-	fake := fake.NewSimpleClientset(&corev1.Pod{
+	runningPod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:                       "bar",
 			Namespace:                  "foo",
@@ -85,6 +84,7 @@ func TestDescribePod(t *testing.T) {
 			},
 		},
 		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
 			Conditions: []corev1.PodCondition{
 				{
 					Type:   condition1,
@@ -92,18 +92,46 @@ func TestDescribePod(t *testing.T) {
 				},
 			},
 		},
-	})
-	c := &describeClient{T: t, Namespace: "foo", Interface: fake}
-	d := PodDescriber{c}
-	out, err := d.Describe("foo", "bar", DescriberSettings{ShowEvents: true})
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "bar") || !strings.Contains(out, "Status:") {
-		t.Errorf("unexpected out: %s", out)
+	tests := []struct {
+		name       string
+		namespace  string
+		phase      corev1.PodPhase
+		wantOutput []string
+	}{
+		{
+			name: "foo", namespace: "bar", phase: "Running",
+			wantOutput: []string{"bar", "Status:", "Terminating (lasts 10y)", "Termination Grace Period", "1234s"},
+		},
+		{
+			name: "pod1", namespace: "ns1", phase: "Pending",
+			wantOutput: []string{"pod1", "ns1", "Terminating (lasts 10y)", "Termination Grace Period", "1234s"},
+		},
+		{
+			name: "pod2", namespace: "ns2", phase: "Succeeded",
+			wantOutput: []string{"pod2", "ns2", "Succeeded"},
+		},
+		{
+			name: "pod3", namespace: "ns3", phase: "Failed",
+			wantOutput: []string{"pod3", "ns3", "Failed"},
+		},
 	}
-	if !strings.Contains(out, "Terminating (lasts 10y)") || !strings.Contains(out, "1234s") {
-		t.Errorf("unexpected out: %s", out)
+
+	for i, test := range tests {
+		pod := runningPod.DeepCopy()
+		pod.Name, pod.Namespace, pod.Status.Phase = test.name, test.namespace, test.phase
+		fake := fake.NewSimpleClientset(pod)
+		c := &describeClient{T: t, Namespace: pod.Namespace, Interface: fake}
+		d := PodDescriber{c}
+		out, err := d.Describe(pod.Namespace, pod.Name, DescriberSettings{ShowEvents: true})
+		if err != nil {
+			t.Errorf("case %d: unexpected error: %v", i, err)
+		}
+		for _, wantStr := range test.wantOutput {
+			if !strings.Contains(out, wantStr) {
+				t.Errorf("case %d didn't contain want(%s): unexpected out:\n%s", i, wantStr, out)
+			}
+		}
 	}
 }
 
@@ -681,7 +709,18 @@ func TestDescribeService(t *testing.T) {
 					LoadBalancerIP:        "5.6.7.8",
 					SessionAffinity:       corev1.ServiceAffinityNone,
 					ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+					InternalTrafficPolicy: ptr.To(corev1.ServiceInternalTrafficPolicyCluster),
 					HealthCheckNodePort:   32222,
+				},
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{
+								IP:     "5.6.7.8",
+								IPMode: ptr.To(corev1.LoadBalancerIPModeVIP),
+							},
+						},
+					},
 				},
 			},
 			endpointSlices: []*discoveryv1.EndpointSlice{{
@@ -713,13 +752,15 @@ func TestDescribeService(t *testing.T) {
 				IP Families:              IPv4
 				IP:                       1.2.3.4
 				IPs:                      <none>
-				IP:                       5.6.7.8
+				Desired LoadBalancer IP:  5.6.7.8
+				LoadBalancer Ingress:     5.6.7.8 (VIP)
 				Port:                     port-tcp  8080/TCP
 				TargetPort:               9527/TCP
 				NodePort:                 port-tcp  31111/TCP
 				Endpoints:                10.244.0.1:9527,10.244.0.2:9527,10.244.0.3:9527
 				Session Affinity:         None
 				External Traffic Policy:  Local
+				Internal Traffic Policy:  Cluster
 				HealthCheck NodePort:     32222
 				Events:                   <none>
 			`)[1:],
@@ -746,7 +787,17 @@ func TestDescribeService(t *testing.T) {
 					LoadBalancerIP:        "5.6.7.8",
 					SessionAffinity:       corev1.ServiceAffinityNone,
 					ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+					InternalTrafficPolicy: ptr.To(corev1.ServiceInternalTrafficPolicyLocal),
 					HealthCheckNodePort:   32222,
+				},
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{
+								IP: "5.6.7.8",
+							},
+						},
+					},
 				},
 			},
 			endpointSlices: []*discoveryv1.EndpointSlice{
@@ -798,13 +849,15 @@ func TestDescribeService(t *testing.T) {
 				IP Families:              IPv4
 				IP:                       1.2.3.4
 				IPs:                      <none>
-				IP:                       5.6.7.8
+				Desired LoadBalancer IP:  5.6.7.8
+				LoadBalancer Ingress:     5.6.7.8
 				Port:                     port-tcp  8080/TCP
 				TargetPort:               targetPort/TCP
 				NodePort:                 port-tcp  31111/TCP
 				Endpoints:                10.244.0.1:9527,10.244.0.2:9527,10.244.0.3:9527 + 2 more...
 				Session Affinity:         None
 				External Traffic Policy:  Local
+				Internal Traffic Policy:  Local
 				HealthCheck NodePort:     32222
 				Events:                   <none>
 			`)[1:],
@@ -861,7 +914,7 @@ func TestDescribeService(t *testing.T) {
 				IP Families:              IPv4
 				IP:                       1.2.3.4
 				IPs:                      <none>
-				IP:                       5.6.7.8
+				Desired LoadBalancer IP:  5.6.7.8
 				Port:                     port-tcp  8080/TCP
 				TargetPort:               targetPort/TCP
 				NodePort:                 port-tcp  31111/TCP
@@ -910,7 +963,7 @@ func TestDescribeService(t *testing.T) {
 				IP Families:              IPv4
 				IP:                       1.2.3.4
 				IPs:                      1.2.3.4
-				IP:                       5.6.7.8
+				Desired LoadBalancer IP:  5.6.7.8
 				Port:                     port-tcp  8080/TCP
 				TargetPort:               targetPort/TCP
 				NodePort:                 port-tcp  31111/TCP
@@ -6314,12 +6367,12 @@ func TestDescribeServiceCIDR(t *testing.T) {
 		input  *fake.Clientset
 		output string
 	}{
-		"ServiceCIDR v1alpha1": {
-			input: fake.NewSimpleClientset(&networkingv1alpha1.ServiceCIDR{
+		"ServiceCIDR v1beta1": {
+			input: fake.NewSimpleClientset(&networkingv1beta1.ServiceCIDR{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo.123",
 				},
-				Spec: networkingv1alpha1.ServiceCIDRSpec{
+				Spec: networkingv1beta1.ServiceCIDRSpec{
 					CIDRs: []string{"10.1.0.0/16", "fd00:1:1::/64"},
 				},
 			}),
@@ -6330,12 +6383,12 @@ Annotations:  <none>
 CIDRs:        10.1.0.0/16, fd00:1:1::/64
 Events:       <none>` + "\n",
 		},
-		"ServiceCIDR v1alpha1 IPv4": {
-			input: fake.NewSimpleClientset(&networkingv1alpha1.ServiceCIDR{
+		"ServiceCIDR v1beta1 IPv4": {
+			input: fake.NewSimpleClientset(&networkingv1beta1.ServiceCIDR{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo.123",
 				},
-				Spec: networkingv1alpha1.ServiceCIDRSpec{
+				Spec: networkingv1beta1.ServiceCIDRSpec{
 					CIDRs: []string{"10.1.0.0/16"},
 				},
 			}),
@@ -6346,12 +6399,12 @@ Annotations:  <none>
 CIDRs:        10.1.0.0/16
 Events:       <none>` + "\n",
 		},
-		"ServiceCIDR v1alpha1 IPv6": {
-			input: fake.NewSimpleClientset(&networkingv1alpha1.ServiceCIDR{
+		"ServiceCIDR v1beta1 IPv6": {
+			input: fake.NewSimpleClientset(&networkingv1beta1.ServiceCIDR{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo.123",
 				},
-				Spec: networkingv1alpha1.ServiceCIDRSpec{
+				Spec: networkingv1beta1.ServiceCIDRSpec{
 					CIDRs: []string{"fd00:1:1::/64"},
 				},
 			}),
@@ -6385,13 +6438,13 @@ func TestDescribeIPAddress(t *testing.T) {
 		input  *fake.Clientset
 		output string
 	}{
-		"IPAddress v1alpha1": {
-			input: fake.NewSimpleClientset(&networkingv1alpha1.IPAddress{
+		"IPAddress v1beta1": {
+			input: fake.NewSimpleClientset(&networkingv1beta1.IPAddress{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo.123",
 				},
-				Spec: networkingv1alpha1.IPAddressSpec{
-					ParentRef: &networkingv1alpha1.ParentReference{
+				Spec: networkingv1beta1.IPAddressSpec{
+					ParentRef: &networkingv1beta1.ParentReference{
 						Group:     "mygroup",
 						Resource:  "myresource",
 						Namespace: "mynamespace",

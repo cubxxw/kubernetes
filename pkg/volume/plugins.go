@@ -418,7 +418,7 @@ type VolumePluginMgr struct {
 	plugins                   map[string]VolumePlugin
 	prober                    DynamicPluginProber
 	probedPlugins             map[string]VolumePlugin
-	loggedDeprecationWarnings sets.String
+	loggedDeprecationWarnings sets.Set[string]
 	Host                      VolumeHost
 }
 
@@ -560,7 +560,7 @@ func (pm *VolumePluginMgr) InitPlugins(plugins []VolumePlugin, prober DynamicPlu
 	defer pm.mutex.Unlock()
 
 	pm.Host = host
-	pm.loggedDeprecationWarnings = sets.NewString()
+	pm.loggedDeprecationWarnings = sets.New[string]()
 
 	if prober == nil {
 		// Use a dummy prober to prevent nil deference.
@@ -997,7 +997,7 @@ func NewPersistentVolumeRecyclerPodTemplate() *v1.Pod {
 			Containers: []v1.Container{
 				{
 					Name:    "pv-recycler",
-					Image:   "registry.k8s.io/build-image/debian-base:bookworm-v1.0.2",
+					Image:   "registry.k8s.io/build-image/debian-base:bookworm-v1.0.3",
 					Command: []string{"/bin/sh"},
 					Args:    []string{"-c", "test -e /scrub && find /scrub -mindepth 1 -delete && test -z \"$(ls -A /scrub)\" || exit 1"},
 					VolumeMounts: []v1.VolumeMount{

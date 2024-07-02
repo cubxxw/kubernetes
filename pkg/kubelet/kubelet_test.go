@@ -34,12 +34,12 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	noopoteltrace "go.opentelemetry.io/otel/trace/noop"
 
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 	cadvisorapiv2 "github.com/google/cadvisor/info/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 	core "k8s.io/client-go/testing"
 	"k8s.io/mount-utils"
 
@@ -209,7 +209,7 @@ func newTestKubeletWithImageList(
 	kubelet.runtimeState.setNetworkState(nil)
 	kubelet.rootDirectory = t.TempDir()
 	kubelet.podLogsDirectory = t.TempDir()
-	kubelet.sourcesReady = config.NewSourcesReady(func(_ sets.String) bool { return true })
+	kubelet.sourcesReady = config.NewSourcesReady(func(_ sets.Set[string]) bool { return true })
 	kubelet.serviceLister = testServiceLister{}
 	kubelet.serviceHasSynced = func() bool { return true }
 	kubelet.nodeHasSynced = func() bool { return true }
@@ -257,7 +257,7 @@ func newTestKubeletWithImageList(
 	kubelet.cadvisor = &cadvisortest.Fake{}
 	machineInfo, _ := kubelet.cadvisor.MachineInfo()
 	kubelet.setCachedMachineInfo(machineInfo)
-	kubelet.tracer = oteltrace.NewNoopTracerProvider().Tracer("")
+	kubelet.tracer = noopoteltrace.NewTracerProvider().Tracer("")
 
 	fakeMirrorClient := podtest.NewFakeMirrorClient()
 	secretManager := secret.NewSimpleSecretManager(kubelet.kubeClient)
@@ -312,7 +312,7 @@ func newTestKubeletWithImageList(
 		HighThresholdPercent: 90,
 		LowThresholdPercent:  80,
 	}
-	imageGCManager, err := images.NewImageGCManager(fakeRuntime, kubelet.StatsProvider, fakeRecorder, fakeNodeRef, fakeImageGCPolicy, oteltrace.NewNoopTracerProvider())
+	imageGCManager, err := images.NewImageGCManager(fakeRuntime, kubelet.StatsProvider, fakeRecorder, fakeNodeRef, fakeImageGCPolicy, noopoteltrace.NewTracerProvider())
 	assert.NoError(t, err)
 	kubelet.imageManager = &fakeImageGCManager{
 		fakeImageService: fakeRuntime,
@@ -728,7 +728,7 @@ func TestHandlePodRemovesWhenSourcesAreReady(t *testing.T) {
 		{Pod: fakePod},
 	}
 	kubelet := testKubelet.kubelet
-	kubelet.sourcesReady = config.NewSourcesReady(func(_ sets.String) bool { return ready })
+	kubelet.sourcesReady = config.NewSourcesReady(func(_ sets.Set[string]) bool { return ready })
 
 	kubelet.HandlePodRemoves(pods)
 	time.Sleep(2 * time.Second)
@@ -2135,7 +2135,7 @@ func TestGenerateAPIPodStatusWithReasonCache(t *testing.T) {
 				"unknown": {Terminated: &v1.ContainerStateTerminated{
 					ExitCode: 137,
 					Message:  "The container could not be located when the pod was terminated",
-					Reason:   "ContainerStatusUnknown",
+					Reason:   kubecontainer.ContainerReasonStatusUnknown,
 				}},
 			},
 			expectedLastTerminationState: map[string]v1.ContainerState{
@@ -3052,16 +3052,14 @@ func TestNewMainKubeletStandAlone(t *testing.T) {
 		MemoryThrottlingFactor:                    utilpointer.Float64(0),
 	}
 	var prober volume.DynamicPluginProber
-	tp := oteltrace.NewNoopTracerProvider()
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	cadvisor := cadvisortest.NewMockInterface(mockCtrl)
-	cadvisor.EXPECT().MachineInfo().Return(&cadvisorapi.MachineInfo{}, nil).AnyTimes()
+	tp := noopoteltrace.NewTracerProvider()
+	cadvisor := cadvisortest.NewMockInterface(t)
+	cadvisor.EXPECT().MachineInfo().Return(&cadvisorapi.MachineInfo{}, nil).Maybe()
 	cadvisor.EXPECT().ImagesFsInfo().Return(cadvisorapiv2.FsInfo{
 		Usage:     400,
 		Capacity:  1000,
 		Available: 600,
-	}, nil).AnyTimes()
+	}, nil).Maybe()
 	tlsOptions := &server.TLSOptions{
 		Config: &tls.Config{
 			MinVersion: 0,
@@ -3072,7 +3070,7 @@ func TestNewMainKubeletStandAlone(t *testing.T) {
 		fakeRuntime.Stop()
 	}()
 	fakeRecorder := &record.FakeRecorder{}
-	rtSvc := createRemoteRuntimeService(endpoint, t, oteltrace.NewNoopTracerProvider())
+	rtSvc := createRemoteRuntimeService(endpoint, t, noopoteltrace.NewTracerProvider())
 	kubeDep := &Dependencies{
 		Auth:                 nil,
 		CAdvisorInterface:    cadvisor,

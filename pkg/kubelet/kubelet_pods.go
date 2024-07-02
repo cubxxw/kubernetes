@@ -631,7 +631,7 @@ func (kl *Kubelet) GenerateRunContainerOptions(ctx context.Context, pod *v1.Pod,
 	return opts, cleanupAction, nil
 }
 
-var masterServices = sets.NewString("kubernetes")
+var masterServices = sets.New[string]("kubernetes")
 
 // getServiceEnvVarMap makes a map[string]string of env vars for services a
 // pod in namespace ns should see.
@@ -2028,7 +2028,7 @@ func (kl *Kubelet) convertToAPIContainerStatuses(pod *v1.Pod, podStatus *kubecon
 			// twice. "container never ran" is different than "container ran and failed".  This is handled differently in the kubelet
 			// and it is handled differently in higher order logic like crashloop detection and handling
 			status.State.Terminated = &v1.ContainerStateTerminated{
-				Reason:   "ContainerStatusUnknown",
+				Reason:   kubecontainer.ContainerReasonStatusUnknown,
 				Message:  "The container could not be located when the pod was terminated",
 				ExitCode: 137, // this code indicates an error
 			}
@@ -2123,6 +2123,23 @@ func (kl *Kubelet) convertToAPIContainerStatuses(pod *v1.Pod, podStatus *kubecon
 			Requests: requests,
 		}
 		return resources
+	}
+
+	convertContainerStatusUser := func(cStatus *kubecontainer.Status) *v1.ContainerUser {
+		if cStatus.User == nil {
+			return nil
+		}
+
+		user := &v1.ContainerUser{}
+		if cStatus.User.Linux != nil {
+			user.Linux = &v1.LinuxContainerUser{
+				UID:                cStatus.User.Linux.UID,
+				GID:                cStatus.User.Linux.GID,
+				SupplementalGroups: cStatus.User.Linux.SupplementalGroups,
+			}
+		}
+
+		return user
 	}
 
 	// Fetch old containers statuses from old pod status.
@@ -2238,7 +2255,7 @@ func (kl *Kubelet) convertToAPIContainerStatuses(pod *v1.Pod, podStatus *kubecon
 		// https://github.com/kubernetes/kubernetes/blob/90c9f7b3e198e82a756a68ffeac978a00d606e55/pkg/kubelet/kubelet_pods.go#L1440-L1445
 		// This prevents the pod from becoming pending
 		status.LastTerminationState.Terminated = &v1.ContainerStateTerminated{
-			Reason:   "ContainerStatusUnknown",
+			Reason:   kubecontainer.ContainerReasonStatusUnknown,
 			Message:  "The container could not be located when the pod was deleted.  The container used to be Running",
 			ExitCode: 137,
 		}
@@ -2277,6 +2294,9 @@ func (kl *Kubelet) convertToAPIContainerStatuses(pod *v1.Pod, podStatus *kubecon
 			if status.State.Running != nil {
 				status.Resources = convertContainerStatusResources(cName, status, cStatus, oldStatuses)
 			}
+		}
+		if utilfeature.DefaultFeatureGate.Enabled(features.SupplementalGroupsPolicy) {
+			status.User = convertContainerStatusUser(cStatus)
 		}
 		if containerSeen[cName] == 0 {
 			statuses[cName] = status

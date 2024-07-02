@@ -235,8 +235,8 @@ func initImageConfigs(list RegistryList) (map[ImageID]Config, map[ImageID]Config
 	configs[BusyBox] = Config{list.PromoterE2eRegistry, "busybox", "1.36.1-1"}
 	configs[CudaVectorAdd] = Config{list.PromoterE2eRegistry, "cuda-vector-add", "1.0"}
 	configs[CudaVectorAdd2] = Config{list.PromoterE2eRegistry, "cuda-vector-add", "2.3"}
-	configs[DistrolessIptables] = Config{list.BuildImageRegistry, "distroless-iptables", "v0.5.4"}
-	configs[Etcd] = Config{list.GcEtcdRegistry, "etcd", "3.5.13-0"}
+	configs[DistrolessIptables] = Config{list.BuildImageRegistry, "distroless-iptables", "v0.5.5"}
+	configs[Etcd] = Config{list.GcEtcdRegistry, "etcd", "3.5.14-0"}
 	configs[Httpd] = Config{list.PromoterE2eRegistry, "httpd", "2.4.38-4"}
 	configs[HttpdNew] = Config{list.PromoterE2eRegistry, "httpd", "2.4.39-4"}
 	configs[InvalidRegistryImage] = Config{list.InvalidRegistry, "alpine", "3.1"}
@@ -253,7 +253,7 @@ func initImageConfigs(list RegistryList) (map[ImageID]Config, map[ImageID]Config
 	configs[Nonewprivs] = Config{list.PromoterE2eRegistry, "nonewprivs", "1.3"}
 	configs[NonRoot] = Config{list.PromoterE2eRegistry, "nonroot", "1.4"}
 	// Pause - when these values are updated, also update cmd/kubelet/app/options/container_runtime.go
-	configs[Pause] = Config{list.GcRegistry, "pause", "3.9"}
+	configs[Pause] = Config{list.GcRegistry, "pause", "3.10"}
 	configs[Perl] = Config{list.PromoterE2eRegistry, "perl", "5.26"}
 	configs[PrometheusDummyExporter] = Config{list.GcRegistry, "prometheus-dummy-exporter", "v0.1.0"}
 	configs[PrometheusToSd] = Config{list.GcRegistry, "prometheus-to-sd", "v0.5.0"}

@@ -322,7 +322,7 @@ const (
 	MinExternalEtcdVersion = "3.5.11-0"
 
 	// DefaultEtcdVersion indicates the default etcd version that kubeadm uses
-	DefaultEtcdVersion = "3.5.13-0"
+	DefaultEtcdVersion = "3.5.14-0"
 
 	// Etcd defines variable used internally when referring to etcd component
 	Etcd = "etcd"
@@ -435,7 +435,7 @@ const (
 	ModeNode string = "Node"
 
 	// PauseVersion indicates the default pause image version for kubeadm
-	PauseVersion = "3.9"
+	PauseVersion = "3.10"
 
 	// CgroupDriverSystemd holds the systemd driver type
 	CgroupDriverSystemd = "systemd"
@@ -481,9 +481,9 @@ var (
 
 	// SupportedEtcdVersion lists officially supported etcd versions with corresponding Kubernetes releases
 	SupportedEtcdVersion = map[uint8]string{
-		29: "3.5.13-0",
-		30: "3.5.13-0",
-		31: "3.5.13-0",
+		29: "3.5.14-0",
+		30: "3.5.14-0",
+		31: "3.5.14-0",
 	}
 
 	// KubeadmCertsClusterRoleName sets the name for the ClusterRole that allows
@@ -575,16 +575,6 @@ func GetStaticPodFilepath(componentName, manifestsDir string) string {
 // GetAdminKubeConfigPath returns the location on the disk where admin kubeconfig is located by default
 func GetAdminKubeConfigPath() string {
 	return filepath.Join(KubernetesDir, AdminKubeConfigFileName)
-}
-
-// GetSuperAdminKubeConfigPath returns the location on the disk where admin kubeconfig is located by default
-func GetSuperAdminKubeConfigPath() string {
-	return filepath.Join(KubernetesDir, SuperAdminKubeConfigFileName)
-}
-
-// GetBootstrapKubeletKubeConfigPath returns the location on the disk where bootstrap kubelet kubeconfig is located by default
-func GetBootstrapKubeletKubeConfigPath() string {
-	return filepath.Join(KubernetesDir, KubeletBootstrapKubeConfigFileName)
 }
 
 // GetKubeletKubeConfigPath returns the location on the disk where kubelet kubeconfig is located by default

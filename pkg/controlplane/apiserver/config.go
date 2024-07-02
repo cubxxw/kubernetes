@@ -23,8 +23,9 @@ import (
 	"net/http"
 	"time"
 
-	oteltrace "go.opentelemetry.io/otel/trace"
+	noopoteltrace "go.opentelemetry.io/otel/trace/noop"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -46,7 +47,6 @@ import (
 	clientgoinformers "k8s.io/client-go/informers"
 	clientgoclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/keyutil"
-	"k8s.io/component-base/version"
 	aggregatorapiserver "k8s.io/kube-aggregator/pkg/apiserver"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 
@@ -94,9 +94,9 @@ type Extra struct {
 	ExtendExpiration            bool
 
 	// ServiceAccountIssuerDiscovery
-	ServiceAccountIssuerURL  string
-	ServiceAccountJWKSURI    string
-	ServiceAccountPublicKeys []interface{}
+	ServiceAccountIssuerURL        string
+	ServiceAccountJWKSURI          string
+	ServiceAccountPublicKeysGetter serviceaccount.PublicKeysGetter
 
 	SystemNamespaces []string
 
@@ -143,7 +143,13 @@ func BuildGenericConfig(
 		lastErr = fmt.Errorf("failed to create real external clientset: %w", err)
 		return
 	}
-	versionedInformers = clientgoinformers.NewSharedInformerFactory(clientgoExternalClient, 10*time.Minute)
+	trim := func(obj interface{}) (interface{}, error) {
+		if accessor, err := meta.Accessor(obj); err == nil && accessor.GetManagedFields() != nil {
+			accessor.SetManagedFields(nil)
+		}
+		return obj, nil
+	}
+	versionedInformers = clientgoinformers.NewSharedInformerFactoryWithOptions(clientgoExternalClient, 10*time.Minute, clientgoinformers.WithTransform(trim))
 
 	if lastErr = s.Features.ApplyTo(genericConfig, clientgoExternalClient, versionedInformers); lastErr != nil {
 		return
@@ -172,20 +178,19 @@ func BuildGenericConfig(
 		sets.NewString("attach", "exec", "proxy", "log", "portforward"),
 	)
 
-	kubeVersion := version.Get()
-	genericConfig.Version = &kubeVersion
-
 	if genericConfig.EgressSelector != nil {
 		s.Etcd.StorageConfig.Transport.EgressLookup = genericConfig.EgressSelector.Lookup
 	}
 	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServerTracing) {
 		s.Etcd.StorageConfig.Transport.TracerProvider = genericConfig.TracerProvider
 	} else {
-		s.Etcd.StorageConfig.Transport.TracerProvider = oteltrace.NewNoopTracerProvider()
+		s.Etcd.StorageConfig.Transport.TracerProvider = noopoteltrace.NewTracerProvider()
 	}
 
 	storageFactoryConfig := kubeapiserver.NewStorageFactoryConfig()
+	storageFactoryConfig.CurrentVersion = genericConfig.EffectiveVersion
 	storageFactoryConfig.APIResourceConfig = genericConfig.MergedResourceConfig
+	storageFactoryConfig.DefaultResourceEncoding.SetEffectiveVersion(genericConfig.EffectiveVersion)
 	storageFactory, lastErr = storageFactoryConfig.Complete(s.Etcd).New()
 	if lastErr != nil {
 		return
@@ -363,18 +368,24 @@ func CreateConfig(
 		return nil, nil, fmt.Errorf("failed to apply admission: %w", err)
 	}
 
-	// Load and set the public keys.
-	var pubKeys []interface{}
-	for _, f := range opts.Authentication.ServiceAccounts.KeyFiles {
-		keys, err := keyutil.PublicKeysFromFile(f)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse key file %q: %w", f, err)
+	if len(opts.Authentication.ServiceAccounts.KeyFiles) > 0 {
+		// Load and set the public keys.
+		var pubKeys []interface{}
+		for _, f := range opts.Authentication.ServiceAccounts.KeyFiles {
+			keys, err := keyutil.PublicKeysFromFile(f)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse key file %q: %w", f, err)
+			}
+			pubKeys = append(pubKeys, keys...)
 		}
-		pubKeys = append(pubKeys, keys...)
+		keysGetter, err := serviceaccount.StaticPublicKeysGetter(pubKeys)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to set up public service account keys: %w", err)
+		}
+		config.ServiceAccountPublicKeysGetter = keysGetter
 	}
 	config.ServiceAccountIssuerURL = opts.Authentication.ServiceAccounts.Issuers[0]
 	config.ServiceAccountJWKSURI = opts.Authentication.ServiceAccounts.JWKSURI
-	config.ServiceAccountPublicKeys = pubKeys
 
 	return config, genericInitializers, nil
 }
