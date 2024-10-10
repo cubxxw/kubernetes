@@ -779,9 +779,9 @@ func TestDescribeService(t *testing.T) {
 					},
 				},
 				Endpoints: []discoveryv1.Endpoint{
-					{Addresses: []string{"10.244.0.1"}},
-					{Addresses: []string{"10.244.0.2"}},
-					{Addresses: []string{"10.244.0.3"}},
+					{Addresses: []string{"10.244.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
+					{Addresses: []string{"10.244.0.2"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
+					{Addresses: []string{"10.244.0.3"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
 				},
 				Ports: []discoveryv1.EndpointPort{{
 					Name:     ptr.To("port-tcp"),
@@ -857,8 +857,8 @@ func TestDescribeService(t *testing.T) {
 						},
 					},
 					Endpoints: []discoveryv1.Endpoint{
-						{Addresses: []string{"10.244.0.1"}},
-						{Addresses: []string{"10.244.0.2"}},
+						{Addresses: []string{"10.244.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
+						{Addresses: []string{"10.244.0.2"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
 					},
 					Ports: []discoveryv1.EndpointPort{{
 						Name:     ptr.To("port-tcp"),
@@ -875,9 +875,9 @@ func TestDescribeService(t *testing.T) {
 						},
 					},
 					Endpoints: []discoveryv1.Endpoint{
-						{Addresses: []string{"10.244.0.3"}},
-						{Addresses: []string{"10.244.0.4"}},
-						{Addresses: []string{"10.244.0.5"}},
+						{Addresses: []string{"10.244.0.3"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(false)}},
+						{Addresses: []string{"10.244.0.4"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
+						{Addresses: []string{"10.244.0.5"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
 					},
 					Ports: []discoveryv1.EndpointPort{{
 						Name:     ptr.To("port-tcp"),
@@ -901,10 +901,75 @@ func TestDescribeService(t *testing.T) {
 				Port:                     port-tcp  8080/TCP
 				TargetPort:               targetPort/TCP
 				NodePort:                 port-tcp  31111/TCP
-				Endpoints:                10.244.0.1:9527,10.244.0.2:9527,10.244.0.3:9527 + 2 more...
+				Endpoints:                10.244.0.1:9527,10.244.0.2:9527,10.244.0.4:9527 + 1 more...
 				Session Affinity:         None
 				External Traffic Policy:  Local
 				Internal Traffic Policy:  Local
+				HealthCheck NodePort:     32222
+				Events:                   <none>
+			`)[1:],
+		},
+		{
+			name: "test-ready-field-empty",
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: "foo",
+				},
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeLoadBalancer,
+					Ports: []corev1.ServicePort{{
+						Name:       "port-tcp",
+						Port:       8080,
+						Protocol:   corev1.ProtocolTCP,
+						TargetPort: intstr.FromInt32(9527),
+						NodePort:   31111,
+					}},
+					Selector:              map[string]string{"blah": "heh"},
+					ClusterIP:             "1.2.3.4",
+					IPFamilies:            []corev1.IPFamily{corev1.IPv4Protocol},
+					LoadBalancerIP:        "5.6.7.8",
+					SessionAffinity:       corev1.ServiceAffinityNone,
+					ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+					InternalTrafficPolicy: ptr.To(corev1.ServiceInternalTrafficPolicyCluster),
+					HealthCheckNodePort:   32222,
+				},
+			},
+			endpointSlices: []*discoveryv1.EndpointSlice{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar-abcdef",
+					Namespace: "foo",
+					Labels: map[string]string{
+						"kubernetes.io/service-name": "bar",
+					},
+				},
+				Endpoints: []discoveryv1.Endpoint{
+					{Addresses: []string{"10.244.0.1"}},
+				},
+				Ports: []discoveryv1.EndpointPort{{
+					Name:     ptr.To("port-tcp"),
+					Port:     ptr.To[int32](9527),
+					Protocol: ptr.To(corev1.ProtocolTCP),
+				}},
+			}},
+			expected: dedent.Dedent(`
+				Name:                     bar
+				Namespace:                foo
+				Labels:                   <none>
+				Annotations:              <none>
+				Selector:                 blah=heh
+				Type:                     LoadBalancer
+				IP Families:              IPv4
+				IP:                       1.2.3.4
+				IPs:                      <none>
+				Desired LoadBalancer IP:  5.6.7.8
+				Port:                     port-tcp  8080/TCP
+				TargetPort:               9527/TCP
+				NodePort:                 port-tcp  31111/TCP
+				Endpoints:                10.244.0.1:9527
+				Session Affinity:         None
+				External Traffic Policy:  Local
+				Internal Traffic Policy:  Cluster
 				HealthCheck NodePort:     32222
 				Events:                   <none>
 			`)[1:],
@@ -943,7 +1008,7 @@ func TestDescribeService(t *testing.T) {
 					},
 				},
 				Endpoints: []discoveryv1.Endpoint{
-					{Addresses: []string{"10.244.0.1"}},
+					{Addresses: []string{"10.244.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}},
 				},
 				Ports: []discoveryv1.EndpointPort{{
 					Name:     ptr.To("port-tcp"),
@@ -2657,7 +2722,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled up replica set bar-002 to 1",
+					Message:             "Scaled up replica set bar-002 from 0 to 1",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-20 * time.Minute)),
 					Series: &corev1.EventSeries{
@@ -2678,7 +2743,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:    corev1.EventTypeNormal,
 					Reason:  "ScalingReplicaSet",
-					Message: "Scaled up replica set bar-001 to 2",
+					Message: "Scaled up replica set bar-001 from 0 to 2",
 					Source: corev1.EventSource{
 						Component: "deployment-controller",
 					},
@@ -2697,7 +2762,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:    corev1.EventTypeNormal,
 					Reason:  "ScalingReplicaSet",
-					Message: "Scaled up replica set bar-002 to 1",
+					Message: "Scaled up replica set bar-002 from 0 to 1",
 					Source: corev1.EventSource{
 						Component: "deployment-controller",
 					},
@@ -2716,7 +2781,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled down replica set bar-002 to 1",
+					Message:             "Scaled down replica set bar-002 from 2 to 1",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-1 * time.Minute)),
 				},
@@ -2727,10 +2792,10 @@ func TestDescribeDeployment(t *testing.T) {
 				"OldReplicaSets:    bar-001 (2/2 replicas created)",
 				"NewReplicaSet:     bar-002 (1/1 replicas created)",
 				"Events:\n",
-				"Normal  ScalingReplicaSet  12m (x3 over 20m)  deployment-controller  Scaled up replica set bar-002 to 1",
-				"Normal  ScalingReplicaSet  10m                deployment-controller  Scaled up replica set bar-001 to 2",
-				"Normal  ScalingReplicaSet  2m                 deployment-controller  Scaled up replica set bar-002 to 1",
-				"Normal  ScalingReplicaSet  60s                deployment-controller  Scaled down replica set bar-002 to 1",
+				"Normal  ScalingReplicaSet  12m (x3 over 20m)  deployment-controller  Scaled up replica set bar-002 from 0 to 1",
+				"Normal  ScalingReplicaSet  10m                deployment-controller  Scaled up replica set bar-001 from 0 to 2",
+				"Normal  ScalingReplicaSet  2m                 deployment-controller  Scaled up replica set bar-002 from 0 to 1",
+				"Normal  ScalingReplicaSet  60s                deployment-controller  Scaled down replica set bar-002 from 2 to 1",
 			},
 		},
 		{
@@ -2917,7 +2982,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled up replica set bar-002 to 1",
+					Message:             "Scaled up replica set bar-002 from 0 to 1",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-20 * time.Minute)),
 					Series: &corev1.EventSeries{
@@ -2938,7 +3003,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:    corev1.EventTypeNormal,
 					Reason:  "ScalingReplicaSet",
-					Message: "Scaled up replica set bar-001 to 2",
+					Message: "Scaled up replica set bar-001 from 0 to 2",
 					Source: corev1.EventSource{
 						Component: "deployment-controller",
 					},
@@ -2957,7 +3022,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:    corev1.EventTypeNormal,
 					Reason:  "ScalingReplicaSet",
-					Message: "Scaled up replica set bar-002 to 1",
+					Message: "Scaled up replica set bar-002 from 0 to 1",
 					Source: corev1.EventSource{
 						Component: "deployment-controller",
 					},
@@ -2976,7 +3041,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled down replica set bar-002 to 1",
+					Message:             "Scaled down replica set bar-002 from 2 to 1",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-1 * time.Minute)),
 				}, &corev1.Event{
@@ -2993,7 +3058,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled up replica set bar-002 to 2",
+					Message:             "Scaled up replica set bar-002 from 0 to 2",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-15 * time.Second)),
 				}, &corev1.Event{
@@ -3010,7 +3075,7 @@ func TestDescribeDeployment(t *testing.T) {
 					},
 					Type:                corev1.EventTypeNormal,
 					Reason:              "ScalingReplicaSet",
-					Message:             "Scaled down replica set bar-001 to 0",
+					Message:             "Scaled down replica set bar-001 from 2 to 0",
 					ReportingController: "deployment-controller",
 					EventTime:           metav1.NewMicroTime(time.Now().Add(-3 * time.Second)),
 				},
@@ -3021,12 +3086,12 @@ func TestDescribeDeployment(t *testing.T) {
 				"OldReplicaSets:    bar-001 (0/0 replicas created)",
 				"NewReplicaSet:     bar-002 (2/2 replicas created)",
 				"Events:\n",
-				"Normal  ScalingReplicaSet  12m (x3 over 20m)  deployment-controller  Scaled up replica set bar-002 to 1",
-				"Normal  ScalingReplicaSet  10m                deployment-controller  Scaled up replica set bar-001 to 2",
-				"Normal  ScalingReplicaSet  2m                 deployment-controller  Scaled up replica set bar-002 to 1",
-				"Normal  ScalingReplicaSet  60s                deployment-controller  Scaled down replica set bar-002 to 1",
-				"Normal  ScalingReplicaSet  15s                deployment-controller  Scaled up replica set bar-002 to 2",
-				"Normal  ScalingReplicaSet  3s                 deployment-controller  Scaled down replica set bar-001 to 0",
+				"Normal  ScalingReplicaSet  12m (x3 over 20m)  deployment-controller  Scaled up replica set bar-002 from 0 to 1",
+				"Normal  ScalingReplicaSet  10m                deployment-controller  Scaled up replica set bar-001 from 0 to 2",
+				"Normal  ScalingReplicaSet  2m                 deployment-controller  Scaled up replica set bar-002 from 0 to 1",
+				"Normal  ScalingReplicaSet  60s                deployment-controller  Scaled down replica set bar-002 from 2 to 1",
+				"Normal  ScalingReplicaSet  15s                deployment-controller  Scaled up replica set bar-002 from 0 to 2",
+				"Normal  ScalingReplicaSet  3s                 deployment-controller  Scaled down replica set bar-001 from 2 to 0",
 			},
 		},
 	}
