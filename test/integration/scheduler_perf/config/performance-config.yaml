@@ -688,49 +688,85 @@
 #      initPods: 20000
 #      measurePods: 5000
 
-- name: Unschedulable
+# Measure throughput of regular schedulable pods that are interleaved by high priority preemption pods scheduled at 20/s rate.
+# Implementation of asynchrounous preemption feature https://github.com/kubernetes/kubernetes/issues/126858 is supposed to increase the trhoughput of the measured pods as all heavy operations (apiserver communication) will be performed asyncronously, wihtout blocking the scheduler loop.
+# How is it achieved:
+# 1. There are X initial nodes with 4 low priority pods each, consuming 3.6 CPU out of the total 4 available.
+# 2. High priority preemption which need to preempt 3 of 4 low priority pods to fit (require 3 CPU).
+# 3. Measured pods are always schedulable, as they require 0.1 CPU only.
+- name: PreemptionAsync
   workloadTemplate:
   - opcode: createNodes
     countParam: $initNodes
   - opcode: createPods
     countParam: $initPods
-    podTemplatePath: config/templates/pod-large-cpu.yaml
-    skipWaitToCompletion: true
+    podTemplatePath: config/templates/pod-low-priority.yaml
+  - opcode: churn
+    mode: create
+    templatePaths:
+    - config/templates/pod-high-priority-large-cpu.yaml
+    intervalMilliseconds: 50
   - opcode: createPods
     countParam: $measurePods
     podTemplatePath: config/templates/pod-default.yaml
     collectMetrics: true
   workloads:
-  - name: 5Nodes/2InitPods
+  - name: 5Nodes
     labels: [integration-test, performance, short]
     params:
       initNodes: 5
-      initPods: 2
-      measurePods: 10
-  - name: 500Nodes/200InitPods
+      initPods: 20
+      measurePods: 5
+  - name: 500Nodes
     labels: [performance, short]
     params:
       initNodes: 500
-      initPods: 200
+      initPods: 2000
+      measurePods: 500
+  - name: 5000Nodes
+    labels: [performance]
+    threshold: 200
+    params:
+      initNodes: 5000
+      initPods: 20000
+      measurePods: 5000
+
+# Measure throughput of regular schedulable pods that are interleaved by unschedulable pods injected at 100/s rate.
+- name: Unschedulable
+  workloadTemplate:
+  - opcode: createNodes
+    countParam: $initNodes
+  - opcode: churn
+    mode: create
+    templatePaths:
+    - config/templates/pod-large-cpu.yaml
+    intervalMilliseconds: 10
+  - opcode: createPods
+    countParam: $measurePods
+    podTemplatePath: config/templates/pod-default.yaml
+    collectMetrics: true
+  workloads:
+  - name: 5Nodes/10Pods
+    labels: [integration-test, performance, short]
+    params:
+      initNodes: 5
+      measurePods: 10
+  - name: 500Nodes/1kPods
+    labels: [performance, short]
+    params:
+      initNodes: 500
       measurePods: 1000
-  - name: 5000Nodes/200InitPods
+  - name: 5kNodes/1kPods
     labels: [performance, short]
     params:
       initNodes: 5000
-      initPods: 200
-      measurePods: 5000
-  - name: 5000Nodes/200InitPods/10000Pods
+      measurePods: 1000
+  - name: 5kNodes/10kPods
     labels: [performance]
-    threshold: 300
+    threshold: 400
     params:
       initNodes: 5000
-      initPods: 200
       measurePods: 10000
-  - name: 5000Nodes/2000InitPods
-    params:
-      initNodes: 5000
-      initPods: 2000
-      measurePods: 5000
 
 - name: SchedulingWithMixedChurn
   workloadTemplate:
@@ -1025,153 +1061,9 @@
       measurePods: 4000
 
 # SchedulingWithResourceClaimTemplate uses a ResourceClaimTemplate
-# and dynamically created ResourceClaim instances for each pod.
-- name: SchedulingWithResourceClaimTemplate
-  featureGates:
-    DRAControlPlaneController: true
-    DynamicResourceAllocation: true
-    # SchedulerQueueingHints: true
-  workloadTemplate:
-  - opcode: createNodes
-    countParam: $nodesWithoutDRA
-  - opcode: createNodes
-    nodeTemplatePath: config/dra/node-with-dra-test-driver.yaml
-    countParam: $nodesWithDRA
-  - opcode: createResourceDriver
-    driverName: test-driver.cdi.k8s.io
-    nodes: scheduler-perf-dra-*
-    maxClaimsPerNodeParam: $maxClaimsPerNode
-  - opcode: createAny
-    templatePath: config/dra/deviceclass.yaml
-  - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate.yaml
-    namespace: init
-  - opcode: createPods
-    namespace: init
-    countParam: $initPods
-    podTemplatePath: config/dra/pod-with-claim-template.yaml
-  - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate.yaml
-    namespace: test
-  - opcode: createPods
-    namespace: test
-    countParam: $measurePods
-    podTemplatePath: config/dra/pod-with-claim-template.yaml
-    collectMetrics: true
-  workloads:
-  - name: fast
-    labels: [integration-test, performance, short]
-    params:
-      # This testcase runs through all code paths without
-      # taking too long overall.
-      nodesWithDRA: 1
-      nodesWithoutDRA: 1
-      initPods: 0
-      measurePods: 10
-      maxClaimsPerNode: 10
-  - name: 2000pods_100nodes
-    params:
-      # In this testcase, the number of nodes is smaller
-      # than the limit for the PodScheduling slices.
-      nodesWithDRA: 100
-      nodesWithoutDRA: 0
-      initPods: 1000
-      measurePods: 1000
-      maxClaimsPerNode: 20
-  - name: 2000pods_200nodes
-    params:
-      # In this testcase, the driver and scheduler must
-      # truncate the PotentialNodes and UnsuitableNodes
-      # slices.
-      nodesWithDRA: 200
-      nodesWithoutDRA: 0
-      initPods: 1000
-      measurePods: 1000
-      maxClaimsPerNode: 10
-
-# This similar to SchedulingWithResourceClaimTemplate, except
-# that it uses four claims per pod, from two different drivers.
-# This emphasizes a bit more the complexity of collaborative
-# scheduling via PodSchedulingContext.
-- name: SchedulingWithMultipleResourceClaims
-  featureGates:
-    DRAControlPlaneController: true
-    DynamicResourceAllocation: true
-    # SchedulerQueueingHints: true
-  workloadTemplate:
-  - opcode: createNodes
-    countParam: $nodesWithoutDRA
-  - opcode: createNodes
-    nodeTemplatePath: config/dra/node-with-dra-test-driver.yaml
-    countParam: $nodesWithDRA
-  - opcode: createResourceDriver
-    driverName: test-driver.cdi.k8s.io
-    nodes: scheduler-perf-dra-*
-    maxClaimsPerNodeParam: $maxClaimsPerNode
-  - opcode: createResourceDriver
-    driverName: another-test-driver.cdi.k8s.io
-    nodes: scheduler-perf-dra-*
-    maxClaimsPerNodeParam: $maxClaimsPerNode
-  - opcode: createAny
-    templatePath: config/dra/deviceclass.yaml
-  - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate.yaml
-    namespace: init
-  - opcode: createAny
-    templatePath: config/dra/another-resourceclaimtemplate.yaml
-    namespace: init
-  - opcode: createPods
-    namespace: init
-    countParam: $initPods
-    podTemplatePath: config/dra/pod-with-many-claim-templates.yaml
-  - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate.yaml
-    namespace: test
-  - opcode: createAny
-    templatePath: config/dra/another-resourceclaimtemplate.yaml
-    namespace: test
-  - opcode: createPods
-    namespace: test
-    countParam: $measurePods
-    podTemplatePath: config/dra/pod-with-many-claim-templates.yaml
-    collectMetrics: true
-  workloads:
-  - name: fast
-    labels: [integration-test, performance, short]
-    params:
-      # This testcase runs through all code paths without
-      # taking too long overall.
-      nodesWithDRA: 1
-      nodesWithoutDRA: 1
-      initPods: 0
-      measurePods: 1
-      maxClaimsPerNode: 20
-  - name: 2000pods_100nodes
-    params:
-      # In this testcase, the number of nodes is smaller
-      # than the limit for the PodScheduling slices.
-      nodesWithDRA: 100
-      nodesWithoutDRA: 0
-      initPods: 1000
-      measurePods: 1000
-      maxClaimsPerNode: 40
-  - name: 2000pods_200nodes
-    params:
-      # In this testcase, the driver and scheduler must
-      # truncate the PotentialNodes and UnsuitableNodes
-      # slices.
-      nodesWithDRA: 200
-      nodesWithoutDRA: 0
-      initPods: 1000
-      measurePods: 1000
-      maxClaimsPerNode: 20
-
-# SchedulingWithResourceClaimTemplateStructured uses a ResourceClaimTemplate
 # and dynamically creates ResourceClaim instances for each pod. Node, pod and
 # device counts are chosen so that the cluster gets filled up completely.
-#
-# The driver uses structured parameters.
-- name: SchedulingWithResourceClaimTemplateStructured
+- name: SchedulingWithResourceClaimTemplate
   featureGates:
     DynamicResourceAllocation: true
     # SchedulerQueueingHints: true
@@ -1185,18 +1077,17 @@
     driverName: test-driver.cdi.k8s.io
     nodes: scheduler-perf-dra-*
     maxClaimsPerNodeParam: $maxClaimsPerNode
-    structuredParameters: true
   - opcode: createAny
-    templatePath: config/dra/deviceclass-structured.yaml
+    templatePath: config/dra/deviceclass.yaml
   - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate-structured.yaml
+    templatePath: config/dra/resourceclaimtemplate.yaml
     namespace: init
   - opcode: createPods
     namespace: init
     countParam: $initPods
     podTemplatePath: config/dra/pod-with-claim-template.yaml
   - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate-structured.yaml
+    templatePath: config/dra/resourceclaimtemplate.yaml
     namespace: test
   - opcode: createPods
     namespace: test
@@ -1236,16 +1127,14 @@
       measurePods: 2500
       maxClaimsPerNode: 10
 
-# SteadyStateResourceClaimTemplateStructured uses a ResourceClaimTemplate and
+# SteadyStateResourceClaimTemplate uses a ResourceClaimTemplate and
 # dynamically creates ResourceClaim instances for each pod. It creates ten
 # pods, waits for them to be scheduled, deletes them, and starts again,
 # so the cluster remains at the same level of utilization.
 #
 # The number of already allocated claims can be varied, thus simulating
 # various degrees of pre-existing resource utilization.
-#
-# The driver uses structured parameters.
-- name: SteadyStateClusterResourceClaimTemplateStructured
+- name: SteadyStateClusterResourceClaimTemplate
   featureGates:
     DynamicResourceAllocation: true
     # SchedulerQueueingHints: true
@@ -1259,17 +1148,16 @@
     driverName: test-driver.cdi.k8s.io
     nodes: scheduler-perf-dra-*
     maxClaimsPerNodeParam: $maxClaimsPerNode
-    structuredParameters: true
   - opcode: createAny
-    templatePath: config/dra/deviceclass-structured.yaml
+    templatePath: config/dra/deviceclass.yaml
   - opcode: createAny
-    templatePath: config/dra/resourceclaim-structured.yaml
+    templatePath: config/dra/resourceclaim.yaml
     countParam: $initClaims
     namespace: init
   - opcode: allocResourceClaims
     namespace: init
   - opcode: createAny
-    templatePath: config/dra/resourceclaimtemplate-structured.yaml
+    templatePath: config/dra/resourceclaimtemplate.yaml
     namespace: test
   - opcode: createPods
     namespace: test
@@ -1358,9 +1246,7 @@
 # SchedulingWithResourceClaimTemplate uses ResourceClaims
 # with deterministic names that are shared between pods.
 # There is a fixed ratio of 1:5 between claims and pods.
-#
-# The driver uses structured parameters.
-- name: SchedulingWithResourceClaimStructured
+- name: SchedulingWithResourceClaim
   featureGates:
     DynamicResourceAllocation: true
     # SchedulerQueueingHints: true
@@ -1374,11 +1260,10 @@
     driverName: test-driver.cdi.k8s.io
     nodes: scheduler-perf-dra-*
     maxClaimsPerNodeParam: $maxClaimsPerNode
-    structuredParameters: true
   - opcode: createAny
-    templatePath: config/dra/deviceclass-structured.yaml
+    templatePath: config/dra/deviceclass.yaml
   - opcode: createAny
-    templatePath: config/dra/resourceclaim-structured.yaml
+    templatePath: config/dra/resourceclaim.yaml
     namespace: init
     countParam: $initClaims
   - opcode: createPods
@@ -1386,7 +1271,7 @@
     countParam: $initPods
     podTemplatePath: config/dra/pod-with-claim-ref.yaml
   - opcode: createAny
-    templatePath: config/dra/resourceclaim-structured.yaml
+    templatePath: config/dra/resourceclaim.yaml
     namespace: test
     countParam: $measureClaims
   - opcode: createPods

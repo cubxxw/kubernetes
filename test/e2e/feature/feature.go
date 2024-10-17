@@ -92,18 +92,6 @@ var (
 	Downgrade = framework.WithFeature(framework.ValidFeatures.Add("Downgrade"))
 
 	// owning-sig: sig-node
-	// kep: https://kep.k8s.io/3063
-	// test-infra jobs:
-	// - "classic-dra" in https://testgrid.k8s.io/sig-node-dynamic-resource-allocation
-	//
-	// This label is used for tests which need:
-	// - the DynamicResourceAllocation *and* DRAControlPlaneController feature gates
-	// - the resource.k8s.io API group
-	// - a container runtime where support for CDI (https://github.com/cncf-tags/container-device-interface)
-	//   is enabled such that passing CDI device IDs through CRI fields is supported
-	DRAControlPlaneController = framework.WithFeature(framework.ValidFeatures.Add("DRAControlPlaneController"))
-
-	// owning-sig: sig-node
 	// kep: https://kep.k8s.io/4381
 	// test-infra jobs:
 	// - the non-"classic-dra" jobs in https://testgrid.k8s.io/sig-node-dynamic-resource-allocation
@@ -362,6 +350,14 @@ var (
 	// Marks tests that require a cluster with SupplementalGroupsPolicy
 	// (used for testing fine-grained SupplementalGroups control <https://kep.k8s.io/3619>)
 	SupplementalGroupsPolicy = framework.WithFeature(framework.ValidFeatures.Add("SupplementalGroupsPolicy"))
+
+	// Owner: sig-node
+	// Tests marked with this feature MUST run with the CRI Proxy configured so errors can be injected into the kubelet's CRI calls.
+	// This is useful for testing how the kubelet handles various error conditions in its CRI interactions.
+	// test-infra jobs:
+	// - pull-kubernetes-node-e2e-cri-proxy-serial (need manual trigger)
+	// - ci-kubernetes-node-e2e-cri-proxy-serial
+	CriProxy = framework.WithFeature(framework.ValidFeatures.Add("CriProxy"))
 
 	// Owner: sig-network
 	// Marks tests that require a cluster with Topology Hints enabled.
