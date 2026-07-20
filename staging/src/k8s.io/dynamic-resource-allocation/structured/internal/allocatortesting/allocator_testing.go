@@ -410,6 +410,8 @@ func device(name string, capacity any, attributes map[resourceapi.QualifiedName]
 	switch capacity := capacity.(type) {
 	case map[resourceapi.QualifiedName]resource.Quantity:
 		device.Capacity = toDeviceCapacity(capacity)
+	case map[resourceapi.QualifiedName]resourceapi.DeviceCapacity:
+		device.Capacity = capacity
 	case string:
 		if capacity == fromCounters {
 			capacityFromCounters = true
@@ -5870,6 +5872,39 @@ func TestAllocator(t *testing.T,
 			node:          node(node1, region1),
 			expectResults: []any{},
 		},
+		"consumable-capacity-requests-are-not-modified": {
+			features: Features{
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(
+				claim(claim0).withRequests(
+					deviceRequest(req0, classA, 1).withCapacityRequest(ptr.To(two)),
+					deviceRequest(req1, classA, 1).withCapacityRequest(ptr.To(resource.MustParse("1000000000000000000000"))),
+				),
+			),
+			classes: objects(class(classA, driverA)),
+			slices: unwrapResourceSlices(
+				sliceWithDevices(slice1, node1, pool1, driverA,
+					device(device1, map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+						capacity0: {
+							Value: resource.MustParse("1000000000000000000002"),
+							RequestPolicy: &resourceapi.CapacityRequestPolicy{
+								Default: ptr.To(resource.MustParse("1000000000000000000000")),
+								ValidRange: &resourceapi.CapacityRequestPolicyRange{
+									Min: &two,
+								},
+							},
+						},
+					}, nil).withAllowMultipleAllocations(),
+				),
+			),
+			node: node(node1, region1),
+			expectResults: []any{allocationResult(
+				localNodeSelector(node1),
+				deviceRequestAllocationResult(req0, driverA, pool1, device1).withConsumedCapacity(&fixedShareID, map[resourceapi.QualifiedName]resource.Quantity{capacity0: two}),
+				deviceRequestAllocationResult(req1, driverA, pool1, device1).withConsumedCapacity(&fixedShareID, map[resourceapi.QualifiedName]resource.Quantity{capacity0: resource.MustParse("1000000000000000000000")}),
+			)},
+		},
 		"allow-multiple-allocations-exclude-multi-allocatable-device-by-class-selector": {
 			features: Features{
 				ConsumableCapacity: true,
@@ -6195,6 +6230,109 @@ func TestAllocator(t *testing.T,
 				deviceRequestAllocationResult(req2, driverA, pool1, device3).withConsumedCapacity(&fixedShareID, nil),
 				deviceRequestAllocationResult(req3, driverA, pool1, device4).withConsumedCapacity(&fixedShareID, nil),
 			)},
+		},
+		"distinct-constraint-single-request-count-3-not-distinct": {
+			features: Features{
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(claimWithRequests(
+				claim0,
+				[]resourceapi.DeviceConstraint{{DistinctAttribute: &stringAttribute}},
+				request(req0, classA, 3)),
+			),
+			classes: objects(class(classA, driverA)),
+			// req0 asks for 3 devices under a DistinctAttribute(stringAttribute)
+			// constraint. Three devices exist with stringAttribute values
+			// value1, value2, value1 -- only two distinct values.
+			slices: unwrapResourceSlices(sliceWithDevices(slice1, node1, pool1, driverA,
+				device(device1, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+				device(device2, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value2")},
+				}),
+				device(device3, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+			)),
+			node: node(node1, region1),
+			// Expected results:
+			//   - [req0] No allocation. Satisfying req0 requires 3 devices with
+			//     distinct stringAttribute values, but device1 and device3 both
+			//     have "value1", so no set of 3 distinct-valued devices exists.
+			expectResults: nil,
+		},
+		"distinct-constraint-single-request-count-3-all-distinct": {
+			features: Features{
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(claimWithRequests(
+				claim0,
+				[]resourceapi.DeviceConstraint{{DistinctAttribute: &stringAttribute}},
+				request(req0, classA, 3)),
+			),
+			classes: objects(class(classA, driverA)),
+			// req0 asks for 3 devices under a DistinctAttribute(stringAttribute)
+			// constraint. Three devices exist with distinct values
+			// value1, value2, value3.
+			slices: unwrapResourceSlices(sliceWithDevices(slice1, node1, pool1, driverA,
+				device(device1, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+				device(device2, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value2")},
+				}),
+				device(device3, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value3")},
+				}),
+			)),
+			node: node(node1, region1),
+			// Expected results:
+			//   - [req0] All three devices are allocated: their stringAttribute
+			//     values (value1, value2, value3) are pairwise distinct, so the
+			//     constraint holds.
+			expectResults: []any{allocationResult(
+				localNodeSelector(node1),
+				deviceAllocationResult(req0, driverA, pool1, device1, false),
+				deviceAllocationResult(req0, driverA, pool1, device2, false),
+				deviceAllocationResult(req0, driverA, pool1, device3, false),
+			)},
+		},
+		"distinct-constraint-two-requests-with-count-not-distinct": {
+			features: Features{
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(
+				claim(claim0).withConstraints(
+					resourceapi.DeviceConstraint{DistinctAttribute: &stringAttribute, Requests: []string{req0, req1}},
+				).withRequests(
+					deviceRequest(req0, classA, 2),
+					deviceRequest(req1, classA, 1),
+				),
+			),
+			classes: objects(class(classA, driverA)),
+			// req0 asks for 2 devices and req1 for 1 device; a single
+			// DistinctAttribute(stringAttribute) constraint covers both requests,
+			// so all 3 allocated devices must be distinct. Three devices exist
+			// with values value1, value2, value1 -- only two distinct values.
+			slices: unwrapResourceSlices(sliceWithDevices(slice1, node1, pool1, driverA,
+				device(device1, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+				device(device2, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value2")},
+				}),
+				device(device3, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+			)),
+			node: node(node1, region1),
+			// Expected results:
+			//   - No allocation. The constraint spans req0 and req1, so the 3
+			//     devices across both requests must be pairwise distinct. Because
+			//     device1 and device3 share "value1", 3 distinct-valued devices
+			//     cannot be chosen.
+			expectResults: nil,
 		},
 		"with-distinct-constraints-attribute-not-set": {
 			features: Features{
@@ -6927,6 +7065,75 @@ func TestAllocator(t *testing.T,
 			node: node(node1, region1),
 
 			expectResults: nil,
+		},
+		"list-attributes-distinct-constraint-single-request-count-3-not-distinct": {
+			features: Features{
+				ListTypeAttributes: true,
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(claimWithRequests(
+				claim0,
+				[]resourceapi.DeviceConstraint{{DistinctAttribute: &stringAttribute}},
+				request(req0, classA, 3)),
+			),
+			classes: objects(class(classA, driverA)),
+			// Same scenario as distinct-constraint-single-request-count-3-not-distinct
+			// but with the ListTypeAttributes feature enabled: req0 asks for 3
+			// devices under a DistinctAttribute constraint, and the 3 devices carry
+			// values value1, value2, value1 -- only two distinct values.
+			slices: unwrapResourceSlices(sliceWithDevices(slice1, node1, pool1, driverA,
+				device(device1, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+				device(device2, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value2")},
+				}),
+				device(device3, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+			)),
+			node: node(node1, region1),
+			// Expected results:
+			//   - [req0] No allocation. device1 and device3 both have "value1",
+			//     so 3 devices with distinct stringAttribute values cannot be found.
+			expectResults: nil,
+		},
+		"list-attributes-distinct-constraint-single-request-count-3-all-distinct": {
+			features: Features{
+				ListTypeAttributes: true,
+				ConsumableCapacity: true,
+			},
+			claimsToAllocate: objects(claimWithRequests(
+				claim0,
+				[]resourceapi.DeviceConstraint{{DistinctAttribute: &stringAttribute}},
+				request(req0, classA, 3)),
+			),
+			classes: objects(class(classA, driverA)),
+			// Same scenario as distinct-constraint-single-request-count-3-all-distinct
+			// but with the ListTypeAttributes feature enabled: req0 asks for 3
+			// devices under a DistinctAttribute constraint, and the 3 devices carry
+			// distinct values value1, value2, value3.
+			slices: unwrapResourceSlices(sliceWithDevices(slice1, node1, pool1, driverA,
+				device(device1, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value1")},
+				}),
+				device(device2, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value2")},
+				}),
+				device(device3, nil, map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"stringAttribute": {StringValue: new("value3")},
+				}),
+			)),
+			node: node(node1, region1),
+			// Expected results:
+			//   - [req0] All three devices are allocated: their stringAttribute
+			//     values (value1, value2, value3) are pairwise distinct.
+			expectResults: []any{allocationResult(
+				localNodeSelector(node1),
+				deviceAllocationResult(req0, driverA, pool1, device1, false),
+				deviceAllocationResult(req0, driverA, pool1, device2, false),
+				deviceAllocationResult(req0, driverA, pool1, device3, false),
+			)},
 		},
 		"list-attributes-distinct-constraint-list-of-string-values-all-distinct": {
 			features: Features{
