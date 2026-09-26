@@ -1,0 +1,392 @@
+# Instincts generated from https://github.com/cubxxw/kubernetes
+# Generated: 2026-04-24T09:15:46.010Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: kubernetes-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Commit Length
+
+## Action
+
+Write moderate-length commit messages (~58 characters)
+
+## Evidence
+
+- Average commit message length: 58 chars
+- Based on 9 commits
+
+---
+id: kubernetes-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: kubernetes-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: kubernetes-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: kubernetes-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: kubernetes-workflow-update-go-module-dependency
+trigger: "when doing update go module dependency"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Workflow Update Go Module Dependency
+
+## Action
+
+Follow the update-go-module-dependency workflow:
+1. Update root go.mod and go.sum files with the new dependency version.
+2. Update go.mod and go.sum in all relevant staging/src/k8s.io/* submodules.
+3. Update go.mod and go.sum in hack/tools or other tool directories if applicable.
+4. Update vendor/ directory with the new dependency code and vendor/modules.txt.
+5. Commit all changes together.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: go.mod, go.sum, go.work.sum
+
+---
+id: kubernetes-workflow-bugfix-in-scheduler-dra-plugin
+trigger: "when doing bugfix in scheduler dra plugin"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/cubxxw/kubernetes
+---
+
+# Kubernetes Workflow Bugfix In Scheduler Dra Plugin
+
+## Action
+
+Follow the bugfix-in-scheduler-dra-plugin workflow:
+1. Identify bug or redundant code in a DRA plugin source file.
+2. Edit the relevant Go file to fix the bug or remove code.
+3. Commit the change with a descriptive message.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: pkg/scheduler/framework/plugins/dynamicresources/extendeddynamicresources.go, pkg/scheduler/framework/plugins/dynamicresources/nodeallocatabledynamicresources.go
+
+---
+id: kubernetes-instinct-file-naming-camelCase
+trigger: "When creating a new Go source file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct File Naming CamelCase
+
+## Action
+
+Name the file using camelCase (e.g., extendedDynamicResources.go)
+
+## Evidence
+
+- Pattern in files: pkg/scheduler/framework/plugins/dynamicresources/extendeddynamicresources.go
+
+---
+id: kubernetes-instinct-function-naming-camelCase
+trigger: "When defining a new function in Go"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Function Naming CamelCase
+
+## Action
+
+Name the function using camelCase (e.g., findExtendedResourceClaim)
+
+## Evidence
+
+- Pattern in Go codebase
+- Seen in scheduler/dra plugin files
+
+---
+id: kubernetes-instinct-class-naming-PascalCase
+trigger: "When defining a new struct or type in Go"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Class Naming PascalCase
+
+## Action
+
+Name the struct/type using PascalCase (e.g., ExtendedDynamicResource)
+
+## Evidence
+
+- Pattern in Go codebase
+- Seen in scheduler plugins
+
+---
+id: kubernetes-instinct-constant-naming-SCREAMING_SNAKE_CASE
+trigger: "When defining a constant in Go"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Constant Naming SCREAMING_SNAKE_CASE
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE (e.g., MAX_RESOURCE_COUNT)
+
+## Evidence
+
+- Pattern in Go codebase
+
+---
+id: kubernetes-instinct-import-style-relative
+trigger: "When importing modules in Go files"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Import Style Relative
+
+## Action
+
+Use relative import paths where possible
+
+## Evidence
+
+- Pattern in Go codebase imports
+
+---
+id: kubernetes-instinct-export-style-named
+trigger: "When exporting functions, types, or variables in Go"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Export Style Named
+
+## Action
+
+Use named exports (exported identifiers start with uppercase letter)
+
+## Evidence
+
+- Pattern in Go codebase
+
+---
+id: kubernetes-instinct-test-location-separate
+trigger: "When adding tests for a package"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Test Location Separate
+
+## Action
+
+Place test files in the same package directory, using *_test.go files
+
+## Evidence
+
+- Architecture: testLocation is 'separate'
+- Pattern in Go projects
+
+---
+id: kubernetes-instinct-test-naming
+trigger: "When writing a test function in Go"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Test Naming
+
+## Action
+
+Name the test function with the prefix Test followed by the function/feature being tested (e.g., TestFindExtendedResourceClaim)
+
+## Evidence
+
+- Pattern in Go codebase
+- Go testing conventions
+
+---
+id: kubernetes-instinct-commit-message-format
+trigger: "When writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Commit Message Format
+
+## Action
+
+Use the format: [subsystem]: [concise description] (e.g., scheduler/dra: fix possible nil pointer dereference)
+
+## Evidence
+
+- Seen in commit: scheduler/dra: remove redundant nil check
+- Seen in commit: scheduler/dra: fix possible nil pointer dereference
+
+---
+id: kubernetes-instinct-commit-message-update-dependency
+trigger: "When updating a Go module dependency"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Commit Message Update Dependency
+
+## Action
+
+Use the commit message format: Update [module] to v[version] (e.g., Update golang.org/x/net to v0.53.0)
+
+## Evidence
+
+- Seen in commit: Update golang.org/x/net to v0.53.0
+- Seen in commit: Update github.com/fxamacker/cbor/v2 to v2.9.1
+
+---
+id: kubernetes-instinct-workflow-update-go-module-dependency
+trigger: "When a Go module dependency needs to be updated across the repository"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Workflow Update Go Module Dependency
+
+## Action
+
+Update root go.mod/go.sum, all staging and tool go.mod/go.sum files, vendor directory, and vendor/modules.txt, then commit all changes together
+
+## Evidence
+
+- Workflow: update-go-module-dependency
+- Seen in commits: Update golang.org/x/net to v0.53.0, Update github.com/fxamacker/cbor/v2 to v2.9.1
+
+---
+id: kubernetes-instinct-workflow-bugfix-scheduler-dra-plugin
+trigger: "When a bug or redundant code is found in scheduler/framework/plugins/dynamicresources"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: cubxxw/kubernetes
+---
+
+# Kubernetes Instinct Workflow Bugfix Scheduler Dra Plugin
+
+## Action
+
+Edit the relevant Go file to fix the bug or remove code, then commit with a descriptive message
+
+## Evidence
+
+- Workflow: bugfix-in-scheduler-dra-plugin
+- Seen in commits: scheduler/dra: remove redundant nil check, scheduler/dra: fix possible nil pointer dereference
+
